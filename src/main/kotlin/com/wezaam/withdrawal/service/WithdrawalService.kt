@@ -11,6 +11,7 @@ import com.wezaam.withdrawal.repository.WithdrawalScheduledRepository
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -39,26 +40,7 @@ class WithdrawalService @Autowired constructor(
 
             if (savedWithdrawalOptional.isPresent && paymentMethod != null) {
                 val savedWithdrawal = savedWithdrawalOptional.get()
-                try {
-                    val transactionId = withdrawalProcessingService.sendToProcessing(withdrawal.amount, paymentMethod)
-                    savedWithdrawal.status = WithdrawalStatus.PROCESSING
-                    savedWithdrawal.transactionId = transactionId
-                    withdrawalRepository.save(savedWithdrawal)
-                    eventsService.send(savedWithdrawal)
-                } catch (e: Exception) {
-                    when (e) {
-                        is TransactionException -> {
-                            savedWithdrawal.status = WithdrawalStatus.FAILED
-                            withdrawalRepository.save(savedWithdrawal)
-                            eventsService.send(savedWithdrawal)
-                        }
-                        else -> {
-                            savedWithdrawal.status = WithdrawalStatus.INTERNAL_ERROR
-                            withdrawalRepository.save(savedWithdrawal)
-                            eventsService.send(savedWithdrawal)
-                        }
-                    }
-                }
+                updateWithdrawalStatusAndPublishEvent(savedWithdrawal, paymentMethod, withdrawal.amount)
             }
         }
     }
@@ -73,6 +55,38 @@ class WithdrawalService @Autowired constructor(
             .forEach { processScheduled(it) }
     }
 
+    @Transactional
+    private fun updateWithdrawalStatusAndPublishEvent(
+        withdrawal: Withdrawal,
+        paymentMethod: PaymentMethod,
+        amount: Double?
+    ) {
+        try {
+            val transactionId = withdrawalProcessingService.sendToProcessing(amount, paymentMethod)
+            withdrawal.status = WithdrawalStatus.PROCESSING
+            withdrawal.transactionId = transactionId
+            withdrawalRepository.save(withdrawal)
+            // Event is saved to outbox in the same transaction
+            eventsService.send(withdrawal)
+        } catch (e: Exception) {
+            when (e) {
+                is TransactionException -> {
+                    withdrawal.status = WithdrawalStatus.FAILED
+                    withdrawalRepository.save(withdrawal)
+                    // Event is saved to outbox in the same transaction
+                    eventsService.send(withdrawal)
+                }
+                else -> {
+                    withdrawal.status = WithdrawalStatus.INTERNAL_ERROR
+                    withdrawalRepository.save(withdrawal)
+                    // Event is saved to outbox in the same transaction
+                    eventsService.send(withdrawal)
+                }
+            }
+        }
+    }
+
+    @Transactional
     private fun processScheduled(withdrawal: WithdrawalScheduled) {
         val paymentMethod = paymentMethodRepository.findById(withdrawal.paymentMethodId!!).orElse(null)
         if (paymentMethod != null) {
@@ -81,17 +95,20 @@ class WithdrawalService @Autowired constructor(
                 withdrawal.status = WithdrawalStatus.PROCESSING
                 withdrawal.transactionId = transactionId
                 withdrawalScheduledRepository.save(withdrawal)
+                // Event is saved to outbox in the same transaction
                 eventsService.send(withdrawal)
             } catch (e: Exception) {
                 when (e) {
                     is TransactionException -> {
                         withdrawal.status = WithdrawalStatus.FAILED
                         withdrawalScheduledRepository.save(withdrawal)
+                        // Event is saved to outbox in the same transaction
                         eventsService.send(withdrawal)
                     }
                     else -> {
                         withdrawal.status = WithdrawalStatus.INTERNAL_ERROR
                         withdrawalScheduledRepository.save(withdrawal)
+                        // Event is saved to outbox in the same transaction
                         eventsService.send(withdrawal)
                     }
                 }
