@@ -10,6 +10,7 @@ import com.wezaam.withdrawal.repository.WithdrawalRepository
 import com.wezaam.withdrawal.repository.WithdrawalScheduledRepository
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -69,6 +70,7 @@ class WithdrawalService(
         }
     }
 
+    @Transactional
     private fun updateWithdrawalStatus(
         withdrawal: Withdrawal,
         status: WithdrawalStatus,
@@ -80,6 +82,7 @@ class WithdrawalService(
         eventsService.send(updatedWithdrawal)
     }
 
+    @Transactional
     private fun updateScheduledWithdrawalStatus(
         withdrawal: WithdrawalScheduled,
         status: WithdrawalStatus,
