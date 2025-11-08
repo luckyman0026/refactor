@@ -10,12 +10,10 @@ class EventsService {
 
     @Async
     fun send(withdrawal: Withdrawal) {
-        // build and send an event in message queue async
     }
 
     @Async
     fun send(withdrawal: WithdrawalScheduled) {
-        // build and send an event in message queue async
     }
 }
 

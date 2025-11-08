@@ -28,30 +28,7 @@ class WithdrawalService(
         val pendingWithdrawal = withdrawalRepository.save(withdrawal)
 
         executorService.submit {
-            val savedWithdrawal = withdrawalRepository.findById(pendingWithdrawal.id)
-            val paymentMethod = savedWithdrawal
-                ?.let { paymentMethodRepository.findById(it.paymentMethodId).orElse(null) }
-
-            if (savedWithdrawal != null && paymentMethod != null) {
-                try {
-                    val transactionId = withdrawalProcessingService.sendToProcessing(
-                        withdrawal.amount,
-                        paymentMethod
-                    )
-                    savedWithdrawal.status = WithdrawalStatus.PROCESSING
-                    savedWithdrawal.transactionId = transactionId
-                    val updatedWithdrawal = withdrawalRepository.save(savedWithdrawal)
-                    eventsService.send(updatedWithdrawal)
-                } catch (e: Exception) {
-                    val status = when (e) {
-                        is TransactionException -> WithdrawalStatus.FAILED
-                        else -> WithdrawalStatus.INTERNAL_ERROR
-                    }
-                    savedWithdrawal.status = status
-                    val errorWithdrawal = withdrawalRepository.save(savedWithdrawal)
-                    eventsService.send(errorWithdrawal)
-                }
-            }
+            processWithdrawal(pendingWithdrawal.id, withdrawal.amount)
         }
     }
 
@@ -60,32 +37,64 @@ class WithdrawalService(
     }
 
     @Scheduled(fixedDelay = 5000)
-    fun run() {
+    fun processScheduledWithdrawals() {
         withdrawalScheduledRepository.findAllByExecuteAtBefore(Instant.now())
             .forEach { processScheduled(it) }
     }
 
+    private fun processWithdrawal(withdrawalId: Long?, amount: Double?) {
+        val savedWithdrawal = withdrawalId?.let { withdrawalRepository.findById(it).orElse(null) } ?: return
+        val paymentMethod = savedWithdrawal.paymentMethodId
+            ?.let { paymentMethodRepository.findById(it).orElse(null) } ?: return
+
+        try {
+            val transactionId = withdrawalProcessingService.sendToProcessing(amount, paymentMethod)
+            updateWithdrawalStatus(savedWithdrawal, WithdrawalStatus.PROCESSING, transactionId)
+        } catch (e: Exception) {
+            val status = determineErrorStatus(e)
+            updateWithdrawalStatus(savedWithdrawal, status, null)
+        }
+    }
+
     private fun processScheduled(withdrawal: WithdrawalScheduled) {
-        val paymentMethod = paymentMethodRepository.findById(withdrawal.paymentMethodId).orElse(null)
-        if (paymentMethod != null) {
-            try {
-                val transactionId = withdrawalProcessingService.sendToProcessing(
-                    withdrawal.amount,
-                    paymentMethod
-                )
-                withdrawal.status = WithdrawalStatus.PROCESSING
-                withdrawal.transactionId = transactionId
-                val updatedWithdrawal = withdrawalScheduledRepository.save(withdrawal)
-                eventsService.send(updatedWithdrawal)
-            } catch (e: Exception) {
-                val status = when (e) {
-                    is TransactionException -> WithdrawalStatus.FAILED
-                    else -> WithdrawalStatus.INTERNAL_ERROR
-                }
-                withdrawal.status = status
-                val errorWithdrawal = withdrawalScheduledRepository.save(withdrawal)
-                eventsService.send(errorWithdrawal)
-            }
+        val paymentMethod = withdrawal.paymentMethodId
+            ?.let { paymentMethodRepository.findById(it).orElse(null) } ?: return
+
+        try {
+            val transactionId = withdrawalProcessingService.sendToProcessing(withdrawal.amount, paymentMethod)
+            updateScheduledWithdrawalStatus(withdrawal, WithdrawalStatus.PROCESSING, transactionId)
+        } catch (e: Exception) {
+            val status = determineErrorStatus(e)
+            updateScheduledWithdrawalStatus(withdrawal, status, null)
+        }
+    }
+
+    private fun updateWithdrawalStatus(
+        withdrawal: Withdrawal,
+        status: WithdrawalStatus,
+        transactionId: Long?
+    ) {
+        withdrawal.status = status
+        transactionId?.let { withdrawal.transactionId = it }
+        val updatedWithdrawal = withdrawalRepository.save(withdrawal)
+        eventsService.send(updatedWithdrawal)
+    }
+
+    private fun updateScheduledWithdrawalStatus(
+        withdrawal: WithdrawalScheduled,
+        status: WithdrawalStatus,
+        transactionId: Long?
+    ) {
+        withdrawal.status = status
+        transactionId?.let { withdrawal.transactionId = it }
+        val updatedWithdrawal = withdrawalScheduledRepository.save(withdrawal)
+        eventsService.send(updatedWithdrawal)
+    }
+
+    private fun determineErrorStatus(exception: Exception): WithdrawalStatus {
+        return when (exception) {
+            is TransactionException -> WithdrawalStatus.FAILED
+            else -> WithdrawalStatus.INTERNAL_ERROR
         }
     }
 }
