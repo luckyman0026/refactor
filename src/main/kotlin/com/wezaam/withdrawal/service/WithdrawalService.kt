@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -22,7 +23,8 @@ class WithdrawalService @Autowired constructor(
     private val withdrawalScheduledRepository: WithdrawalScheduledRepository,
     private val withdrawalProcessingService: WithdrawalProcessingService,
     private val paymentMethodRepository: PaymentMethodRepository,
-    private val eventsService: EventsService
+    private val eventsService: EventsService,
+    private val transactionTemplate: TransactionTemplate
 ) {
     private val executorService: ExecutorService = Executors.newCachedThreadPool()
 
@@ -40,7 +42,10 @@ class WithdrawalService @Autowired constructor(
 
             if (savedWithdrawalOptional.isPresent && paymentMethod != null) {
                 val savedWithdrawal = savedWithdrawalOptional.get()
-                updateWithdrawalStatusAndPublishEvent(savedWithdrawal, paymentMethod, withdrawal.amount)
+                // Use TransactionTemplate to ensure transactional execution in async context
+                transactionTemplate.execute {
+                    updateWithdrawalStatusAndPublishEvent(savedWithdrawal, paymentMethod, withdrawal.amount)
+                }
             }
         }
     }
@@ -55,7 +60,6 @@ class WithdrawalService @Autowired constructor(
             .forEach { processScheduled(it) }
     }
 
-    @Transactional
     private fun updateWithdrawalStatusAndPublishEvent(
         withdrawal: Withdrawal,
         paymentMethod: PaymentMethod,
