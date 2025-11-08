@@ -217,7 +217,7 @@ class WithdrawalServiceTest {
     }
 
     @Test
-    fun `processScheduled should update status to PROCESSING on success`() {
+    fun `run should process scheduled withdrawals and update status to PROCESSING on success`() {
         // Given
         val scheduledWithdrawal = WithdrawalScheduled(
             id = 1L,
@@ -230,13 +230,13 @@ class WithdrawalServiceTest {
         )
         val transactionId = 12345L
         
+        whenever(withdrawalScheduledRepository.findAllByExecuteAtBefore(any())).thenReturn(listOf(scheduledWithdrawal))
         whenever(paymentMethodRepository.findById(1L)).thenReturn(Optional.of(testPaymentMethod))
         whenever(withdrawalProcessingService.sendToProcessing(any(), any())).thenReturn(transactionId)
         whenever(withdrawalScheduledRepository.save(any())).thenReturn(scheduledWithdrawal)
 
         // When
-        withdrawalService.run() // This will process scheduled withdrawals
-        withdrawalService.processScheduled(scheduledWithdrawal)
+        withdrawalService.run()
 
         // Then
         verify(withdrawalProcessingService).sendToProcessing(100.0, testPaymentMethod)
@@ -248,7 +248,7 @@ class WithdrawalServiceTest {
     }
 
     @Test
-    fun `processScheduled should update status to FAILED on TransactionException`() {
+    fun `run should process scheduled withdrawals and update status to FAILED on TransactionException`() {
         // Given
         val scheduledWithdrawal = WithdrawalScheduled(
             id = 1L,
@@ -260,13 +260,14 @@ class WithdrawalServiceTest {
             status = WithdrawalStatus.PENDING
         )
         
+        whenever(withdrawalScheduledRepository.findAllByExecuteAtBefore(any())).thenReturn(listOf(scheduledWithdrawal))
         whenever(paymentMethodRepository.findById(1L)).thenReturn(Optional.of(testPaymentMethod))
         whenever(withdrawalProcessingService.sendToProcessing(any(), any()))
             .thenThrow(TransactionException("Transaction failed"))
         whenever(withdrawalScheduledRepository.save(any())).thenReturn(scheduledWithdrawal)
 
         // When
-        withdrawalService.processScheduled(scheduledWithdrawal)
+        withdrawalService.run()
 
         // Then
         verify(withdrawalProcessingService).sendToProcessing(100.0, testPaymentMethod)
