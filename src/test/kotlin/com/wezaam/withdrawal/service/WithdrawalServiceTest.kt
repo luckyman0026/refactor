@@ -66,8 +66,8 @@ class WithdrawalServiceTest {
             eventsService,
             transactionTemplate
         )
-        whenever(transactionTemplate.execute(any())).thenAnswer { 
-            val callback = it.arguments[0] as org.springframework.transaction.support.TransactionCallback<*>
+        whenever(transactionTemplate.execute(any<org.springframework.transaction.support.TransactionCallback<Any?>>())).thenAnswer { invocation ->
+            val callback = invocation.arguments[0] as org.springframework.transaction.support.TransactionCallback<*>
             callback.doInTransaction(null)
         }
     }
