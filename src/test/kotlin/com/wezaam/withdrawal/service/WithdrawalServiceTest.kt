@@ -45,20 +45,38 @@ class WithdrawalServiceTest {
     @Mock
     private lateinit var eventsService: EventsService
 
+    @Mock
+    private lateinit var transactionTemplate: org.springframework.transaction.support.TransactionTemplate
+
     @Captor
     private lateinit var withdrawalCaptor: ArgumentCaptor<Withdrawal>
 
     @Captor
     private lateinit var scheduledWithdrawalCaptor: ArgumentCaptor<WithdrawalScheduled>
 
-    @InjectMocks
     private lateinit var withdrawalService: WithdrawalService
+
+    @BeforeEach
+    fun initService() {
+        withdrawalService = WithdrawalService(
+            withdrawalRepository,
+            withdrawalScheduledRepository,
+            withdrawalProcessingService,
+            paymentMethodRepository,
+            eventsService,
+            transactionTemplate
+        )
+        whenever(transactionTemplate.execute(any<org.springframework.transaction.support.TransactionCallback<*>>())).thenAnswer { 
+            (it.arguments[0] as org.springframework.transaction.support.TransactionCallback<*>).doInTransaction(null)
+        }
+    }
 
     private lateinit var testPaymentMethod: PaymentMethod
     private lateinit var testUser: User
 
     @BeforeEach
     fun setUp() {
+        initService()
         testUser = User(id = 1L, firstName = "Test User")
         testPaymentMethod = PaymentMethod(
             id = 1L,

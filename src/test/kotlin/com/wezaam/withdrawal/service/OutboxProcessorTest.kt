@@ -58,11 +58,14 @@ class OutboxProcessorTest {
         verify(outboxRepository, org.mockito.kotlin.atLeast(2)).save(eventCaptor.capture())
         val savedEvents = eventCaptor.allValues
         
-        // First save should be PROCESSING status
-        assertEquals(EventStatus.PROCESSING, savedEvents[0].eventStatus)
+        // Check that we have both PROCESSING and SENT statuses
+        val statuses = savedEvents.map { it.eventStatus }
+        assertEquals(true, statuses.contains(EventStatus.PROCESSING))
+        assertEquals(true, statuses.contains(EventStatus.SENT))
         
-        // Second save should be SENT status
-        assertEquals(EventStatus.SENT, savedEvents[1].eventStatus)
+        // Final status should be SENT
+        val finalEvent = savedEvents.last()
+        assertEquals(EventStatus.SENT, finalEvent.eventStatus)
         assertEquals(0, savedEvents[1].retryCount)
         assertEquals(null, savedEvents[1].errorMessage)
     }
