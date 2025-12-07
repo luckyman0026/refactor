@@ -5,7 +5,7 @@
 This solution implements a withdrawal processing system with reliable event delivery using the Outbox pattern. The system has been migrated from Java to Kotlin and follows SOLID principles with comprehensive test coverage.
 
 ## Architecture
-
+  
 ### Technology Stack
 - **Language**: Kotlin 1.8.22
 - **Framework**: Spring Boot 2.4.2
